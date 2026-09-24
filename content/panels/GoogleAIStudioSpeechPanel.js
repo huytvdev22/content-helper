@@ -306,20 +306,80 @@ window.GoogleAIStudioSpeechPanel = class extends window.BasePanel {
     });
   }
 
-  static async clickPodcastCard() {
-    const titleSpans = Array.from(document.querySelectorAll('.title-text'));
-    for (const span of titleSpans) {
-      if (span.textContent.trim() === 'The Energetic Co-Host') {
-        const card = span.closest('mat-card-content') || span.closest('.display-media-container')?.parentElement;
-        if (card) {
-          console.log("✅ [SpeechPanel] Found 'The Energetic Co-Host' card. Clicking...");
-          card.click();
-          return true;
-        }
-      }
+  static async clickPodcastCard(timeoutMs = 4000) {
+    // Nếu trang đã ở trong giao diện soạn thảo thoại (đã có ms-voice-settings), không cần click card nữa
+    if (document.querySelector('ms-voice-settings, ms-speech-editor')) {
+      console.log("ℹ️ [SpeechPanel] Đã ở trong giao diện Speech Editor. Bỏ qua click card.");
+      return false;
     }
-    console.log("ℹ️ [SpeechPanel] 'The Energetic Co-Host' card not found. Proceeding to set values...");
-    return false;
+
+    console.log("🔍 [SpeechPanel] Bắt đầu tìm thẻ 'The Energetic Co-Host'...");
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      const pollInterval = setInterval(() => {
+        let targetCard = null;
+
+        // Tầng 1: Tìm theo tiêu đề (h3.card-title, .card-title, .title-text)
+        const titleCandidates = Array.from(document.querySelectorAll('.card-title, h3, .title-text, [data-testid="dialog-example-card"] h3'));
+        const matchedTitle = titleCandidates.find(el => (el.textContent || '').trim().toLowerCase() === 'the energetic co-host');
+
+        if (matchedTitle) {
+          targetCard = matchedTitle.closest('mat-card, [data-testid="dialog-example-card"], .dialog-example-card, mat-card-content')
+            || matchedTitle.closest('.display-media-container')?.parentElement;
+        }
+
+        // Tầng 2: Tìm theo container mat-card chứa text 'The Energetic Co-Host'
+        if (!targetCard) {
+          const allCards = Array.from(document.querySelectorAll('mat-card, [data-testid="dialog-example-card"], .dialog-example-card'));
+          targetCard = allCards.find(card => {
+            const txt = (card.textContent || '').toLowerCase();
+            return txt.includes('the energetic co-host');
+          });
+        }
+
+        // Tầng 3: Fallback tìm theo icon 'podcasts' hoặc mô tả 'podcast style conversation'
+        if (!targetCard) {
+          const allCards = Array.from(document.querySelectorAll('mat-card, [data-testid="dialog-example-card"], .dialog-example-card'));
+          targetCard = allCards.find(card => {
+            const iconText = card.querySelector('.dialog-icon')?.textContent?.trim()?.toLowerCase();
+            const txt = (card.textContent || '').toLowerCase();
+            return iconText === 'podcasts' || txt.includes('podcast style conversation');
+          });
+        }
+
+        if (targetCard) {
+          clearInterval(pollInterval);
+          console.log("✅ [SpeechPanel] Tìm thấy thẻ 'The Energetic Co-Host'. Đang kích hoạt click...", targetCard);
+
+          // Tránh click trúng nút play audio preview (.play-audio-button)
+          const clickTarget = targetCard.querySelector('.card-text-content, .card-title') || targetCard;
+          try {
+            clickTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+          } catch (_) {}
+
+          // Kích hoạt click native và MouseEvent để Angular Material xử lý sự kiện
+          clickTarget.click();
+          try {
+            clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          } catch (_) {}
+
+          if (clickTarget !== targetCard) {
+            try {
+              targetCard.click();
+            } catch (_) {}
+          }
+
+          return resolve(true);
+        }
+
+        if (Date.now() - startTime >= timeoutMs) {
+          clearInterval(pollInterval);
+          console.log("ℹ️ [SpeechPanel] Timeout: Không tìm thấy thẻ 'The Energetic Co-Host'. Tiếp tục các bước sau...");
+          return resolve(false);
+        }
+      }, 150);
+    });
   }
 
   /**
